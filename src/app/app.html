@@ -205,23 +205,138 @@
     <section class="analytics-section" aria-labelledby="analytics-heading">
       <div class="analytics-heading">
         <div>
-          <p class="section-kicker">COMING NEXT</p>
+          <p class="section-kicker">RESEARCH ANALYTICS</p>
           <h2 id="analytics-heading">Research analytics</h2>
         </div>
-        <span class="phase-badge">PHASE 4</span>
+        @if (searchResponse(); as response) {
+          <span class="sample-badge">
+            {{ response.results.length | number }}
+            {{ response.results.length === 1 ? 'paper' : 'papers' }} retrieved
+          </span>
+        }
       </div>
-      <div class="analytics-placeholder">
-        <span class="analytics-icon" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <path d="M5 26V6m0 20h22M10 21v-5m6 5V9m6 12v-8" />
-          </svg>
-        </span>
-        <div>
-          <h3>See the bigger picture</h3>
-          <p>Publication trends and research insights will live here.</p>
-        </div>
-        <span class="placeholder-label">ANALYTICS SPACE</span>
-      </div>
+
+      @if (state(); as currentState) {
+        @switch (currentState.status) {
+          @case ('success') {
+            @if (currentState.response.results.length === 0) {
+              <div class="analytics-empty">
+                <h3>No papers to chart</h3>
+                <p>
+                  This search returned no papers, so there is no publication-year distribution to
+                  show. Try a broader term or adjust your Boolean expression.
+                </p>
+              </div>
+            } @else if (yearDistribution().buckets.length === 0) {
+              <div class="analytics-empty">
+                <h3>No valid publication years</h3>
+                <p>
+                  None of the {{ yearDistribution().totalRetrieved | number }} retrieved papers has
+                  a valid publication year, so no chart can be drawn.
+                </p>
+                <p class="analytics-note">
+                  {{ yearDistribution().excludedCount | number }}
+                  {{ yearDistribution().excludedCount === 1 ? 'paper' : 'papers' }} excluded from
+                  the year distribution due to a missing or invalid publication year.
+                </p>
+              </div>
+            } @else {
+              <div class="analytics-card">
+                <div class="analytics-card-heading">
+                  <h3 id="year-chart-heading">Publication years of retrieved papers</h3>
+                  <span class="sample-size">
+                    Based on {{ yearDistribution().validCount | number }} of
+                    {{ yearDistribution().totalRetrieved | number }} retrieved
+                    {{ yearDistribution().totalRetrieved === 1 ? 'paper' : 'papers' }} with a valid
+                    publication year
+                  </span>
+                </div>
+
+                <p class="analytics-note">
+                  This chart covers only the papers retrieved in this search. CORE reports
+                  {{ currentState.response.totalHits | number }} total matching records, so it does
+                  not represent every matching paper in CORE.
+                </p>
+
+                @if (yearDistribution().excludedCount > 0) {
+                  <p class="analytics-note">
+                    {{ yearDistribution().excludedCount | number }}
+                    {{ yearDistribution().excludedCount === 1 ? 'paper' : 'papers' }} excluded from
+                    the year distribution due to a missing or invalid publication year.
+                  </p>
+                }
+
+                <div
+                  class="year-chart"
+                  role="group"
+                  aria-labelledby="year-chart-heading"
+                  aria-describedby="year-chart-summary"
+                >
+                  <p id="year-chart-summary" class="sr-only">
+                    Bar chart of papers per publication year, from
+                    {{ yearDistribution().buckets[0].year }} to
+                    {{ yearDistribution().buckets[yearDistribution().buckets.length - 1].year }}.
+                    The same data is available in the table below.
+                  </p>
+                  @for (bucket of yearDistribution().buckets; track bucket.year) {
+                    <div class="year-row">
+                      <span class="year-label">{{ bucket.year }}</span>
+                      <span class="year-track" aria-hidden="true">
+                        <span class="year-bar" [style.width.%]="bucket.widthPercent"></span>
+                      </span>
+                      <span class="year-count">
+                        {{ bucket.count }}
+                        <span class="sr-only">{{ bucket.count === 1 ? 'paper' : 'papers' }}</span>
+                      </span>
+                    </div>
+                  }
+                </div>
+
+                <table class="year-table">
+                  <caption>
+                    Publication years of retrieved papers
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Publication year</th>
+                      <th scope="col">Papers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (bucket of yearDistribution().buckets; track bucket.year) {
+                      <tr>
+                        <th scope="row">{{ bucket.year }}</th>
+                        <td>{{ bucket.count }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          }
+          @case ('loading') {
+            <div class="analytics-empty" role="status">
+              <h3>Preparing your chart</h3>
+              <p>Publication years will appear here once the current search finishes.</p>
+            </div>
+          }
+          @case ('error') {
+            <div class="analytics-empty">
+              <h3>No chart available</h3>
+              <p>The last search did not complete. Run a successful search to see publication years.</p>
+            </div>
+          }
+          @default {
+            <div class="analytics-empty">
+              <h3>See publication years at a glance</h3>
+              <p>
+                Run a search above and this chart will show how the retrieved papers are spread
+                across publication years.
+              </p>
+            </div>
+          }
+        }
+      }
     </section>
   </main>
 

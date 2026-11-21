@@ -4,7 +4,8 @@ import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, map, of, Subject, switchMap } from 'rxjs';
 import { CoreApiResponseError, ResearchService } from './core/research.service';
-import { CoreSearchResponse } from './core/core-api.models';
+import { CoreSearchResponse, ResearchPaper } from './core/core-api.models';
+import { buildPublicationYearDistribution } from './core/publication-years';
 
 const EXAMPLE_QUERY = '(drone AND (package OR delivery))';
 const RESULT_LIMITS = [10, 25, 50, 100] as const;
@@ -32,6 +33,22 @@ export class App {
   readonly limit = signal<ResultLimit>(10);
   readonly state = signal<DashboardState>({ status: 'idle' });
   readonly isLoading = computed(() => this.state().status === 'loading');
+
+  /** Response of the last successful search, or null before/without one. */
+  readonly searchResponse = computed<CoreSearchResponse | null>(() => {
+    const currentState = this.state();
+    return currentState.status === 'success' ? currentState.response : null;
+  });
+
+  /** Papers retrieved by the current search; empty until a search succeeds. */
+  readonly retrievedPapers = computed<ResearchPaper[]>(
+    () => this.searchResponse()?.results ?? [],
+  );
+
+  /** Publication-year distribution derived directly from retrieved papers. */
+  readonly yearDistribution = computed(() =>
+    buildPublicationYearDistribution(this.retrievedPapers()),
+  );
 
   private readonly searchRequests = new Subject<SearchRequest>();
   private readonly researchService = inject(ResearchService);

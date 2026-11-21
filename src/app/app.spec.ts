@@ -130,6 +130,151 @@ describe('App', () => {
     expect(element.textContent).toContain('No papers found');
   });
 
+  it('shows a publication-year chart derived from retrieved papers', () => {
+    setQuery('drone delivery');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'drone delivery')
+      .flush({
+        totalHits: 5000,
+        limit: 10,
+        offset: 0,
+        results: [
+          { id: 'a', title: 'Paper A', yearPublished: 2024 },
+          { id: 'b', title: 'Paper B', yearPublished: 2022 },
+          { id: 'c', title: 'Paper C', yearPublished: 2024 },
+          { id: 'd', title: 'Paper D', yearPublished: 2023 },
+          { id: 'e', title: 'Paper E' },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Publication years of retrieved papers');
+    expect(element.textContent).toContain('Based on 4 of 5 retrieved papers');
+    expect(element.textContent).toContain('5,000 total matching records');
+    expect(element.textContent).toContain('does not represent every matching paper in CORE');
+    expect(element.textContent).toContain('1 paper excluded from the year distribution');
+
+    const component = fixture.componentInstance;
+    expect(component.yearDistribution().buckets.map((b) => [b.year, b.count])).toEqual([
+      [2022, 1],
+      [2023, 1],
+      [2024, 2],
+    ]);
+    expect(component.yearDistribution().excludedCount).toBe(1);
+
+    const rows = Array.from(element.querySelectorAll('.year-row'));
+    expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      '2022 1 paper',
+      '2023 1 paper',
+      '2024 2 papers',
+    ]);
+
+    const bars = Array.from(element.querySelectorAll<HTMLElement>('.year-bar'));
+    expect(bars.map((bar) => bar.style.width)).toEqual(['50%', '50%', '100%']);
+
+    const tableRows = Array.from(element.querySelectorAll('.year-table tbody tr'));
+    expect(
+      tableRows.map((row) =>
+        Array.from(row.querySelectorAll('th, td'))
+          .map((cell) => cell.textContent?.trim())
+          .join(' '),
+      ),
+    ).toEqual(['2022 1', '2023 1', '2024 2']);
+    expect(element.querySelector('.year-table caption')?.textContent).toContain(
+      'Publication years of retrieved papers',
+    );
+  });
+
+  it('updates the chart when a new search returns different results', () => {
+    setQuery('first topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'first topic')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          { id: 'a', title: 'First A', yearPublished: 2020 },
+          { id: 'b', title: 'First B', yearPublished: 2020 },
+        ],
+      });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.yearDistribution().buckets).toEqual([
+      jasmine.objectContaining({ year: 2020, count: 2 }),
+    ]);
+
+    setQuery('second topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'second topic')
+      .flush({
+        totalHits: 3,
+        limit: 10,
+        offset: 0,
+        results: [
+          { id: 'c', title: 'Second A', yearPublished: 2019 },
+          { id: 'd', title: 'Second B', yearPublished: 2021 },
+          { id: 'e', title: 'Second C', yearPublished: 2021 },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(fixture.componentInstance.yearDistribution().buckets.map((b) => [b.year, b.count])).toEqual([
+      [2019, 1],
+      [2021, 2],
+    ]);
+    expect(element.querySelectorAll('.year-row').length).toBe(2);
+    expect(element.textContent).toContain('2019');
+    expect(element.textContent).not.toContain('2020');
+  });
+
+  it('shows an idle empty state for the chart before any search', () => {
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('See publication years at a glance');
+    expect(element.querySelector('.year-chart')).toBeNull();
+    expect(element.querySelector('.year-table')).toBeNull();
+  });
+
+  it('shows a chart empty state when a search returns no papers', () => {
+    setQuery('obscure topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'obscure topic')
+      .flush({ totalHits: 0, limit: 10, offset: 0, results: [] });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('No papers to chart');
+    expect(element.querySelector('.year-chart')).toBeNull();
+  });
+
+  it('shows a chart empty state when no retrieved paper has a valid year', () => {
+    setQuery('undated topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'undated topic')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          { id: 'a', title: 'Undated A' },
+          { id: 'b', title: 'Undated B', yearPublished: 'not-a-year' },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('No valid publication years');
+    expect(element.textContent).toContain('2 papers excluded from the year distribution');
+    expect(element.querySelector('.year-chart')).toBeNull();
+    expect(fixture.componentInstance.yearDistribution().excludedCount).toBe(2);
+  });
+
   it('cancels an older search when a newer query is submitted', () => {
     setQuery('first query');
     submitSearch();
