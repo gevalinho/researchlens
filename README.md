@@ -2,8 +2,9 @@
 
 ResearchLens is an Angular 20 research-discovery dashboard for searching
 [CORE](https://core.ac.uk/)'s open-access collection. It supports Boolean
-search, configurable result limits, typed result normalisation, and an
-accessible publication-year chart derived from the papers actually retrieved.
+search, configurable result limits, typed result normalisation, an accessible
+publication-year chart, and a research gap explorer with deterministic
+topic-frequency analysis, all derived from the papers actually retrieved.
 
 This project was built as a software engineering interview assessment. It is
 not hosted at a public URL; run it locally using the instructions below.
@@ -30,6 +31,12 @@ not hosted at a public URL; run it locally using the instructions below.
   sample-size labelling, a missing/invalid-year exclusion count, and a clear
   statement that the chart covers only the retrieved sample (see
   [Research analytics methodology](#research-analytics-methodology)).
+- **Research gap explorer** — deterministic topic-frequency analysis over the
+  retrieved papers' titles and abstracts: single-word and two-word topics,
+  distinct-paper frequency counts, ranking with generic-term filtering, and
+  interactive selection of a topic to reveal its supporting papers. Infrequent
+  topics are framed as exploratory leads to investigate, not verified research
+  gaps (see [Topic-frequency methodology](#topic-frequency-methodology)).
 - **Responsive, accessible UI** — semantic landmarks, labelled controls,
   `aria-live` result updates, visible focus styles, screen-reader summaries,
   and layouts that adapt from desktop to mobile widths.
@@ -175,6 +182,47 @@ chart together with the exact sample ("Based on X of Y retrieved papers with a
 valid publication year"). Years with no retrieved papers do not appear, and
 changing the result limit can change the chart's shape.
 
+## Topic-frequency methodology
+
+The "Frequent topics in retrieved papers" explorer is computed locally from
+the current search results — it issues no additional CORE request and uses no
+sample or hardcoded data:
+
+1. `extractCandidateTopics()` in `src/app/core/research-topics.ts` tokenises
+   each paper's title and abstract separately (lowercased, punctuation
+   stripped, minimum two characters with at least one letter). It collects
+   distinct single-word topics plus two-word topics from adjacent tokens
+   within the same field, so phrases never span the title/abstract boundary.
+   Each topic is recorded at most once per paper.
+2. Common English stopwords and generic academic filler (`paper`, `study`,
+   `results`, …) are excluded. Additionally, vague standalone words such as
+   `high`, `low`, `multi`, `new`, `novel`, `service(s)`, and `solution(s)` are
+   filtered as single-word topics but kept inside two-word phrases that pair
+   them with an informative word (`high voltage`, `web service`), preserving
+   valid technical terminology. A phrase of two generic words (for example
+   `novel solution`) is still excluded.
+3. `buildResearchTopicDistribution()` counts distinct papers per topic — a
+   word repeated many times in one abstract counts once — and ranks topics by
+   paper count (descending), then two-word phrases before single words, then
+   alphabetically. The ranking is deterministic: identical input always yields
+   identical output. At most `MAX_TOPICS` (12) topics are kept, with bar widths
+   scaled to the largest topic's count.
+4. Papers with no usable title or abstract are skipped and reported in the UI
+   ("X paper(s) excluded from the topic analysis"). The distribution is an
+   Angular `computed()` over the dashboard state, so it updates automatically
+   whenever a new search returns fresh results.
+5. Selecting a topic (a native `<button>` row with `aria-pressed`, operable by
+   click and keyboard) opens a panel listing that topic's supporting papers in
+   retrieved order; selecting it again (or the Close action) dismisses the
+   panel, and a new search clears the selection. The explorer pairs the chart
+   with a matching data table, a screen-reader chart summary, sample-size
+   labelling, and the same retrieved-sample scope statement as the year chart.
+
+**Areas to investigate, not verified gaps.** Topic frequency suggests where
+to look next — infrequent topics are exploratory leads only. Always verify a
+lead with a wider search before drawing conclusions; the UI states this next
+to the explorer.
+
 ## Testing
 
 Run the unit test suite once (Karma + Jasmine in Chrome headless):
@@ -183,7 +231,7 @@ Run the unit test suite once (Karma + Jasmine in Chrome headless):
 npm test -- --watch=false
 ```
 
-The suite currently contains 22 tests covering:
+The suite currently contains 47 tests covering:
 
 - `ResearchService`: Boolean query pass-through and pagination parameters,
   metadata normalisation (including safe-URL filtering), missing metadata,
@@ -194,10 +242,19 @@ The suite currently contains 22 tests covering:
   updates across searches, and idle/no-results/no-valid-year chart states.
 - `publication-years`: aggregation, chronological sorting, missing/invalid
   year exclusion, empty inputs, and bar-width scaling.
+- `research-topics`: single- and two-word extraction, stopword and
+  generic-term filtering with technical-phrase preservation, distinct-paper
+  counts, phrase-first deterministic ranking, limit capping, bar-width
+  scaling, and empty/analysed/skipped-paper accounting.
+- The topic explorer: topic rendering with sample scope, opening and closing
+  the supporting-paper panel (including re-click toggle and Close action),
+  keyboard-accessible topic rows, and explorer updates and empty states
+  across searches.
 
 Test files live next to the code they cover (`src/app/app.spec.ts`,
 `src/app/core/research.service.spec.ts`,
-`src/app/core/publication-years.spec.ts`). There is no end-to-end test suite.
+`src/app/core/publication-years.spec.ts`,
+`src/app/core/research-topics.spec.ts`). There is no end-to-end test suite.
 
 ## Production build and SSR deployment
 
@@ -253,8 +310,8 @@ researchlens/
     ├── server.ts                 # Express SSR server + CORE proxy route
     ├── styles.scss               # Global styles (intentionally minimal)
     └── app/
-        ├── app.ts                # Dashboard component (signals, search state)
-        ├── app.html              # Dashboard template (search, results, chart)
+        ├── app.ts                # Dashboard component (signals, search/topic state)
+        ├── app.html              # Dashboard template (search, results, charts, explorer)
         ├── app.scss              # Dashboard styles
         ├── app.spec.ts           # Dashboard component tests
         ├── app.config.ts         # Browser application providers (zoneless)
@@ -266,21 +323,27 @@ researchlens/
             ├── research.service.ts       # Typed CORE search + normalisation
             ├── research.service.spec.ts  # Service tests
             ├── publication-years.ts      # Year-distribution aggregation
-            └── publication-years.spec.ts # Aggregation tests
+            ├── publication-years.spec.ts # Aggregation tests
+            ├── research-topics.ts        # Topic-frequency extraction + ranking
+            └── research-topics.spec.ts   # Topic extraction/ranking tests
 ```
 
 ## Known limitations
 
 - **Single page of results**: the UI offers result limits but no pagination
   controls, even though the service supports an `offset` parameter.
-- **Sample-based analytics only**: the year chart reflects the retrieved
-  papers (10–100), not CORE's full matching set, and years absent from the
-  sample are not shown as zero-count bars.
+- **Sample-based analytics only**: the year chart and topic explorer reflect
+  the retrieved papers (10–100), not CORE's full matching set, and years
+  absent from the sample are not shown as zero-count bars.
+- **Topics suggest leads, not gaps**: topic frequency highlights areas worth
+  investigating, but infrequent topics are not verified research gaps —
+  confirm any lead with a wider search before drawing conclusions.
 - **Anonymous CORE access**: without an API key, CORE may rate-limit requests
   (HTTP 429); the app reports this as a search error with retry rather than
   backing off automatically.
-- **No result refinement**: there is no in-app sorting, filtering, faceting,
-  paper detail view, or saved-search/bookmark persistence.
+- **No result refinement beyond topics**: outside the explorer's
+  supporting-paper selection, there is no in-app sorting, filtering,
+  faceting, paper detail view, or saved-search/bookmark persistence.
 - **Client-driven search**: searching happens in the browser through
   `/api/core/search/works`, so a deployment must provide that proxy (the
   bundled Express server does); the prerendered first paint shows the idle
@@ -307,6 +370,10 @@ Beyond basic search-and-display, this implementation also includes:
 - An accessible analytics implementation built with native HTML/CSS (no
   charting dependency): visible year/count labels, a screen-reader chart
   summary, and a captioned data table as a readable equivalent.
-- A test suite (22 unit tests) covering the service contract, dashboard
-  behaviour, and the analytics aggregation, including error, retry, and
+- A deterministic research gap explorer: local single- and two-word topic
+  extraction with distinct-paper counts, phrase-first ranking, generic-term
+  filtering that preserves technical phrases, and interactive
+  supporting-paper selection framed as leads to investigate.
+- A test suite (47 unit tests) covering the service contract, dashboard
+  behaviour, and both analytics aggregations, including error, retry, and
   empty-state paths.
