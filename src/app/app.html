@@ -338,6 +338,197 @@
         }
       }
     </section>
+
+    <section class="explorer-section" aria-labelledby="explorer-heading">
+      <div class="analytics-heading">
+        <div>
+          <p class="section-kicker">TOPIC EXPLORER</p>
+          <h2 id="explorer-heading">Research gap explorer</h2>
+        </div>
+        @if (searchResponse(); as response) {
+          <span class="sample-badge">
+            {{ response.results.length | number }}
+            {{ response.results.length === 1 ? 'paper' : 'papers' }} retrieved
+          </span>
+        }
+      </div>
+
+      @if (state(); as currentState) {
+        @switch (currentState.status) {
+          @case ('success') {
+            @if (currentState.response.results.length === 0) {
+              <div class="analytics-empty">
+                <h3>No topics to explore</h3>
+                <p>
+                  This search returned no papers, so there are no topics to show. Try a broader
+                  term or adjust your Boolean expression.
+                </p>
+              </div>
+            } @else if (topicDistribution().topics.length === 0) {
+              <div class="analytics-empty">
+                <h3>No clear topics found</h3>
+                <p>
+                  None of the {{ topicDistribution().totalRetrieved | number }} retrieved papers
+                  has a usable title or abstract, so no topics could be extracted.
+                </p>
+              </div>
+            } @else {
+              <div class="analytics-card">
+                <div class="analytics-card-heading">
+                  <h3 id="topic-chart-heading">Frequent topics in retrieved papers</h3>
+                  <span class="sample-size">
+                    Based on {{ topicDistribution().analyzedCount | number }} of
+                    {{ topicDistribution().totalRetrieved | number }} retrieved
+                    {{ topicDistribution().totalRetrieved === 1 ? 'paper' : 'papers' }} with a
+                    usable title or abstract
+                  </span>
+                </div>
+
+                <p class="analytics-note">
+                  This analysis covers only the papers retrieved in this search. CORE reports
+                  {{ currentState.response.totalHits | number }} total matching records, so it
+                  does not represent every matching paper in CORE.
+                </p>
+
+                @if (topicDistribution().skippedCount > 0) {
+                  <p class="analytics-note">
+                    {{ topicDistribution().skippedCount | number }}
+                    {{ topicDistribution().skippedCount === 1 ? 'paper' : 'papers' }} excluded
+                    from the topic analysis because the title and abstract were both missing.
+                  </p>
+                }
+
+                <p class="analytics-note">
+                  Less-common topics below are exploratory leads only — they suggest where to
+                  look next, not confirmed research gaps. Verify any lead with a wider search
+                  before drawing conclusions.
+                </p>
+
+                <div
+                  class="topic-chart"
+                  role="group"
+                  aria-labelledby="topic-chart-heading"
+                  aria-describedby="topic-chart-summary"
+                >
+                  <p id="topic-chart-summary" class="sr-only">
+                    Bar chart of the most frequent topics across the retrieved papers. Each row
+                    is a button: activate it to see the papers behind that topic. The same data
+                    is available in the table below.
+                  </p>
+                  @for (topic of topicDistribution().topics; track topic.term) {
+                    <button
+                      class="topic-row"
+                      type="button"
+                      (click)="selectTopic(topic.term)"
+                      [class.selected]="selectedTopic() === topic.term"
+                      [attr.aria-pressed]="selectedTopic() === topic.term"
+                      [attr.aria-label]="
+                        'Show papers about ' + topic.term + ', ' + topic.count + ' papers'
+                      "
+                    >
+                      <span class="topic-term">{{ topic.term }}</span>
+                      <span class="topic-track" aria-hidden="true">
+                        <span class="topic-bar" [style.width.%]="topic.widthPercent"></span>
+                      </span>
+                      <span class="topic-count">
+                        {{ topic.count }}
+                        <span class="sr-only">{{ topic.count === 1 ? 'paper' : 'papers' }}</span>
+                      </span>
+                    </button>
+                  }
+                </div>
+
+                <table class="topic-table">
+                  <caption>
+                    Frequent topics in retrieved papers
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Topic</th>
+                      <th scope="col">Papers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (topic of topicDistribution().topics; track topic.term) {
+                      <tr>
+                        <th scope="row">{{ topic.term }}</th>
+                        <td>{{ topic.count }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+
+                @if (selectedTopic(); as term) {
+                  <div
+                    class="analytics-card topic-detail"
+                    role="region"
+                    [attr.aria-label]="'Papers about ' + term"
+                  >
+                    <div class="analytics-card-heading">
+                      <h3>
+                        Papers mentioning “{{ term }}” ({{ selectedTopicPapers().length }})
+                      </h3>
+                      <!-- Borderless text-button style reused for the close action. -->
+                      <button
+                        class="example-query"
+                        type="button"
+                        (click)="clearSelectedTopic()"
+                        aria-label="Close topic details"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    @if (selectedTopicPapers().length === 0) {
+                      <p class="analytics-note">
+                        No retrieved papers mention this topic any more. Run a new search to
+                        refresh the analysis.
+                      </p>
+                    } @else {
+                      <ul class="paper-list">
+                        @for (paper of selectedTopicPapers(); track paper.id ?? $index) {
+                          <li class="paper-card">
+                            <div class="paper-content">
+                              <h3>{{ paper.title || 'Untitled work' }}</h3>
+                              <p class="paper-authors">
+                                {{ paper.authors.length ? paper.authors.join(' · ') : 'Author details unavailable' }}
+                                @if (paper.yearPublished) {
+                                  <span> · {{ paper.yearPublished }}</span>
+                                }
+                              </p>
+                            </div>
+                          </li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+          @case ('loading') {
+            <div class="analytics-empty" role="status">
+              <h3>Preparing your topics</h3>
+              <p>Frequent topics will appear here once the current search finishes.</p>
+            </div>
+          }
+          @case ('error') {
+            <div class="analytics-empty">
+              <h3>No topics available</h3>
+              <p>The last search did not complete. Run a successful search to see frequent topics.</p>
+            </div>
+          }
+          @default {
+            <div class="analytics-empty">
+              <h3>Spot threads worth following</h3>
+              <p>
+                Run a search above and this explorer will surface the most frequent topics in the
+                retrieved papers. Select a topic to see the papers behind it.
+              </p>
+            </div>
+          }
+        }
+      }
+    </section>
   </main>
 
   <footer class="site-footer">

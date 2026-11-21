@@ -300,6 +300,256 @@ describe('App', () => {
     expect(fixture.nativeElement.textContent).not.toContain('first query');
   });
 
+  it('shows a topic explorer derived from retrieved papers', () => {
+    setQuery('drone delivery');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'drone delivery')
+      .flush({
+        totalHits: 5000,
+        limit: 10,
+        offset: 0,
+        results: [
+          {
+            id: 'a',
+            title: 'Drone delivery systems',
+            abstract: 'Autonomous drone delivery in cities',
+            authors: ['Ada Author'],
+            yearPublished: 2024,
+          },
+          {
+            id: 'b',
+            title: 'Drone mapping survey',
+            abstract: 'Mapping remote forests with drones',
+            authors: [],
+            yearPublished: 2023,
+          },
+          { id: 'c', title: null, abstract: null },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Frequent topics in retrieved papers');
+    expect(element.textContent).toContain('Based on 2 of 3 retrieved papers');
+    expect(element.textContent).toContain('5,000 total matching records');
+    expect(element.textContent).toContain('does not represent every matching paper in CORE');
+    expect(element.textContent).toContain('exploratory leads only');
+    expect(element.textContent).toContain('not confirmed research gaps');
+    expect(element.textContent).toContain('1 paper excluded from the topic analysis');
+
+    const component = fixture.componentInstance;
+    const rows = Array.from(element.querySelectorAll('.topic-row'));
+    expect(rows.length).toBe(component.topicDistribution().topics.length);
+    expect(component.topicDistribution().topics[0].term).toBe('drone');
+    expect(component.topicDistribution().topics[0].count).toBe(2);
+
+    const tableRows = Array.from(element.querySelectorAll('.topic-table tbody tr'));
+    expect(tableRows.length).toBe(rows.length);
+    expect(element.querySelector('.topic-table caption')?.textContent).toContain(
+      'Frequent topics in retrieved papers',
+    );
+  });
+
+  it('lets users inspect the papers behind a topic', () => {
+    setQuery('drone delivery');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'drone delivery')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          {
+            id: 'a',
+            title: 'Drone delivery systems',
+            abstract: 'Autonomous drone delivery in cities',
+            authors: ['Ada Author'],
+            yearPublished: 2024,
+          },
+          {
+            id: 'b',
+            title: 'Drone mapping survey',
+            abstract: 'Mapping remote forests with drones',
+            authors: [],
+            yearPublished: 2023,
+          },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const firstRow = element.querySelector('.topic-row') as HTMLButtonElement;
+    expect(firstRow.getAttribute('aria-pressed')).toBe('false');
+
+    firstRow.click();
+    fixture.detectChanges();
+
+    expect(firstRow.getAttribute('aria-pressed')).toBe('true');
+    const detail = element.querySelector('.topic-detail') as HTMLElement;
+    expect(detail.textContent).toContain('Papers mentioning “drone” (2)');
+    expect(detail.textContent).toContain('Drone delivery systems');
+    expect(detail.textContent).toContain('Drone mapping survey');
+
+    (element.querySelector('.topic-detail .example-query') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(element.querySelector('.topic-detail')).toBeNull();
+  });
+
+  it('updates the topic analysis when a new search returns different results', () => {
+    setQuery('first topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'first topic')
+      .flush({
+        totalHits: 1,
+        limit: 10,
+        offset: 0,
+        results: [{ id: 'a', title: 'First drone study', authors: [] }],
+      });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.topicDistribution().topics.map((t) => t.term)).toContain(
+      'drone',
+    );
+
+    (fixture.nativeElement.querySelector('.topic-row') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.topic-detail')).not.toBeNull();
+
+    setQuery('second topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'second topic')
+      .flush({
+        totalHits: 1,
+        limit: 10,
+        offset: 0,
+        results: [{ id: 'b', title: 'Second tidal lagoon', authors: [] }],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const terms = fixture.componentInstance.topicDistribution().topics.map((t) => t.term);
+    expect(terms).toContain('tidal');
+    expect(terms).not.toContain('drone');
+    expect(element.textContent).not.toContain('First drone study');
+    expect(element.querySelector('.topic-detail')).toBeNull();
+  });
+
+  it('shows explorer empty states before a search and when papers lack usable text', () => {
+    expect(fixture.nativeElement.textContent).toContain('Spot threads worth following');
+    expect(fixture.nativeElement.querySelector('.topic-chart')).toBeNull();
+
+    setQuery('undated topic');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'undated topic')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          { id: 'a', title: null, abstract: null },
+          { id: 'b', title: '   ', abstract: '' },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('No clear topics found');
+    expect(element.querySelector('.topic-chart')).toBeNull();
+  });
+
+  it('closes the topic panel when the selected topic is clicked again', () => {
+    setQuery('drone delivery');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'drone delivery')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          {
+            id: 'a',
+            title: 'Drone delivery systems',
+            abstract: 'Autonomous drone delivery in cities',
+            authors: ['Ada Author'],
+            yearPublished: 2024,
+          },
+          {
+            id: 'b',
+            title: 'Drone mapping survey',
+            abstract: 'Mapping remote forests with drones',
+            authors: [],
+            yearPublished: 2023,
+          },
+        ],
+      });
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    const firstRow = element.querySelector('.topic-row') as HTMLButtonElement;
+
+    firstRow.click();
+    fixture.detectChanges();
+    expect(element.querySelector('.topic-detail')).not.toBeNull();
+
+    firstRow.click();
+    fixture.detectChanges();
+    expect(element.querySelector('.topic-detail')).toBeNull();
+    expect(firstRow.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps topic rows keyboard-accessible as native buttons', () => {
+    setQuery('drone delivery');
+    submitSearch();
+    httpTestingController
+      .expectOne((candidate) => candidate.params.get('q') === 'drone delivery')
+      .flush({
+        totalHits: 2,
+        limit: 10,
+        offset: 0,
+        results: [
+          {
+            id: 'a',
+            title: 'Drone delivery systems',
+            abstract: 'Autonomous drone delivery in cities',
+            authors: ['Ada Author'],
+            yearPublished: 2024,
+          },
+          {
+            id: 'b',
+            title: 'Drone mapping survey',
+            abstract: 'Mapping remote forests with drones',
+            authors: [],
+            yearPublished: 2023,
+          },
+        ],
+      });
+    fixture.detectChanges();
+
+    const rows = Array.from(
+      fixture.nativeElement.querySelectorAll('.topic-row'),
+    ) as HTMLButtonElement[];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.tagName).toBe('BUTTON');
+      expect(row.type).toBe('button');
+      expect(row.disabled).toBeFalse();
+      expect(row.getAttribute('aria-pressed')).toMatch(/^(true|false)$/);
+      expect(row.getAttribute('aria-label')).toContain('papers');
+    }
+
+    rows[0].focus();
+    expect(document.activeElement).toBe(rows[0]);
+    rows[0].click();
+    fixture.detectChanges();
+    expect(rows[0].getAttribute('aria-pressed')).toBe('true');
+    expect(fixture.nativeElement.querySelector('.topic-detail')).not.toBeNull();
+  });
+
   function setQuery(query: string): void {
     const input = fixture.nativeElement.querySelector('#research-query') as HTMLInputElement;
     input.value = query;

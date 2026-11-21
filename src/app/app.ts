@@ -6,6 +6,7 @@ import { catchError, map, of, Subject, switchMap } from 'rxjs';
 import { CoreApiResponseError, ResearchService } from './core/research.service';
 import { CoreSearchResponse, ResearchPaper } from './core/core-api.models';
 import { buildPublicationYearDistribution } from './core/publication-years';
+import { buildResearchTopicDistribution } from './core/research-topics';
 
 const EXAMPLE_QUERY = '(drone AND (package OR delivery))';
 const RESULT_LIMITS = [10, 25, 50, 100] as const;
@@ -49,6 +50,30 @@ export class App {
   readonly yearDistribution = computed(() =>
     buildPublicationYearDistribution(this.retrievedPapers()),
   );
+
+  /** Topic-frequency distribution derived directly from retrieved papers. */
+  readonly topicDistribution = computed(() =>
+    buildResearchTopicDistribution(this.retrievedPapers()),
+  );
+
+  /** Currently inspected topic term, or null when no topic is selected. */
+  readonly selectedTopic = signal<string | null>(null);
+
+  /** Papers supporting the selected topic, in retrieved order. */
+  readonly selectedTopicPapers = computed<ResearchPaper[]>(() => {
+    const term = this.selectedTopic();
+    if (!term) {
+      return [];
+    }
+    const topic = this.topicDistribution().topics.find((candidate) => candidate.term === term);
+    if (!topic) {
+      return [];
+    }
+    const papers = this.retrievedPapers();
+    return topic.paperIndexes
+      .filter((index) => index >= 0 && index < papers.length)
+      .map((index) => papers[index]);
+  });
 
   private readonly searchRequests = new Subject<SearchRequest>();
   private readonly researchService = inject(ResearchService);
@@ -105,6 +130,7 @@ export class App {
     event?.preventDefault();
     const query = this.query().trim();
     if (query) {
+      this.selectedTopic.set(null);
       this.searchRequests.next({ query, limit: this.limit() });
     }
   }
@@ -112,8 +138,17 @@ export class App {
   retrySearch(): void {
     const currentState = this.state();
     if (currentState.status === 'error') {
+      this.selectedTopic.set(null);
       this.searchRequests.next({ query: currentState.query, limit: this.limit() });
     }
+  }
+
+  selectTopic(term: string): void {
+    this.selectedTopic.set(this.selectedTopic() === term ? null : term);
+  }
+
+  clearSelectedTopic(): void {
+    this.selectedTopic.set(null);
   }
 
   private getErrorMessage(error: unknown): string {
